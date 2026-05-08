@@ -3,6 +3,7 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, "../data/snapshots.json");
@@ -38,3 +39,34 @@ app.post("/api/snapshots", (req, res) => {
 });
 
 app.listen(3001, () => console.log("📦 Snapshot server running on http://localhost:3001"));
+
+
+//deyption function
+
+const ALGORITHM = "aes-256-gcm";
+const KEY_LENGTH = 32;
+
+function decrypt(encryptedBase64, password) {
+  const buf  = Buffer.from(encryptedBase64, "base64");
+  const salt = buf.slice(0, 16);
+  const iv   = buf.slice(16, 28);
+  const tag  = buf.slice(28, 44);
+  const data = buf.slice(44);
+  const key  = crypto.scryptSync(password, salt, KEY_LENGTH);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(data) + decipher.final("utf8");
+}
+
+// Au démarrage du serveur
+const ENCRYPTED_CONFIG = process.env.PORTFOLIO_CONFIG_ENCRYPTED;
+const CONFIG_PASSWORD   = process.env.CONFIG_PASSWORD;
+
+let config;
+try {
+  config = JSON.parse(decrypt(ENCRYPTED_CONFIG, CONFIG_PASSWORD));
+  console.log("✅ Config déchiffrée avec succès");
+} catch {
+  console.error("❌ Impossible de déchiffrer la config — vérifiez les variables d'environnement");
+  process.exit(1);
+}

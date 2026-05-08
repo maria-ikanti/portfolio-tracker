@@ -45,10 +45,19 @@ function todayKey() {
 // ============================================================
 async function fetchEurRate() {
   try {
-    const r = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+    const r = await fetch("https://api.frankfurter.dev/v1/latest?from=USD&to=EUR");
+    if (!r.ok) {
+      console.error(`❌ EUR rate : HTTP ${r.status}`);
+      return null;
+    }
     const d = await r.json();
-    return d.rates?.EUR ?? 0.92;
-  } catch { return 0.92; }
+    const rate = d.rates?.EUR ?? null;
+    if (!rate) console.error("❌ EUR rate : taux non trouvé dans la réponse", d);
+    return rate;
+  } catch (e) {
+    console.error("❌ EUR rate :", e.message);
+    return null;
+  }
 }
 
 async function fetchCryptoPrices(symbols) {
@@ -60,8 +69,8 @@ async function fetchCryptoPrices(symbols) {
 }
 
 async function fetchMetalPrices() {
-  let gold = 3300;
-  let silver = 80;
+  let gold = null;
+  let silver = null;
 
   // Or via PAXG (CoinGecko)
   try {
@@ -69,15 +78,34 @@ async function fetchMetalPrices() {
       "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd"
     );
     const d = await r.json();
-    if (d["pax-gold"]?.usd) gold = d["pax-gold"].usd;
-  } catch {}
+    gold = d["pax-gold"]?.usd ?? null;
+    if (!gold) console.warn("⚠️ Or : prix non trouvé dans la réponse CoinGecko");
+  } catch (e) {
+    console.error("❌ Or (CoinGecko) :", e.message);
+  }
 
-  // Argent via metals.live
+  // Argent via CoinGecko — token XAGUSD (silver stablecoin)
   try {
-    const r = await fetch("https://api.metals.live/v1/spot/silver");
+    const r = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=silver&vs_currencies=usd"
+    );
     const d = await r.json();
-    if (d?.silver) silver = d.silver;
-  } catch {}
+    console.log("🔍 Réponse CoinGecko silver :", JSON.stringify(d));
+    silver = d["silver"]?.usd ?? null;
+    if (!silver) console.warn("⚠️ Argent : prix non trouvé dans la réponse CoinGecko");
+  } catch (e) {
+    console.error("❌ Argent (CoinGecko) :", e.message);
+  }
+
+  // Fallback visible
+  if (!gold) {
+    console.warn("⚠️ Utilisation du fallback or : 3300");
+    gold = 3300;
+  }
+  if (!silver) {
+    console.warn("⚠️ Utilisation du fallback argent : 80");
+    silver = 80;
+  }
 
   return { gold, silver };
 }
@@ -166,8 +194,14 @@ const fetchAll = useCallback(async () => {
   setLoading(true);
   setError(null);
   try {
-    const [eur, metals] = await Promise.all([fetchEurRate(), fetchMetalPrices()]);
+  const [eur, metals] = await Promise.all([fetchEurRate(), fetchMetalPrices()]);
+
+  if (eur) {
     setEurRate(eur);
+  } else {
+    console.warn("⚠️ Taux EUR non mis à jour — utilisation du dernier taux connu :", eurRate);
+    setError("Taux EUR indisponible — valeurs approximatives.");
+  }
 
     const cryptoSymbols = config.assets.filter(a => a.type === "crypto").map(a => a.symbol);
     let cryptoData = {};
